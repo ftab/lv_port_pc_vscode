@@ -14,7 +14,7 @@
 #include <SDL2/SDL.h>
 #include "lvgl/lvgl.h"
 #include "lvgl/examples/lv_examples.h"
-#include "lv_examples/lv_demo.h"
+#include "lvgl/demos/lv_demos.h"
 #include "lv_drivers/display/monitor.h"
 #include "lv_drivers/indev/mouse.h"
 #include "lv_drivers/indev/keyboard.h"
@@ -33,10 +33,14 @@
  **********************/
 static void hal_init(void);
 static int tick_thread(void *data);
+static void event_cb(lv_event_t *e);
+static void edge_cb(lv_group_t *group, bool forward);
 
 /**********************
  *  STATIC VARIABLES
  **********************/
+static lv_obj_t *panel;
+static bool scrolling = false;
 
 /**********************
  *      MACROS
@@ -84,7 +88,7 @@ int main(int argc, char **argv)
 //  lv_example_colorwheel_1();
 //  lv_example_chart_6();
 //  lv_example_table_2();
-//  lv_example_scroll_2();
+//  lv_example_scroll_2(); // snap
 //  lv_example_textarea_1();
 //  lv_example_msgbox_1();
 //  lv_example_dropdown_2();
@@ -95,11 +99,40 @@ int main(int argc, char **argv)
 //  lv_example_flex_3();
 //  lv_example_label_1();
 
-  lv_demo_widgets();
+//  lv_demo_widgets();
 //  lv_demo_keypad_encoder();
 //  lv_demo_benchmark();
 //  lv_demo_stress();
 //  lv_demo_music();
+
+
+    // panel is static to this file so that we can nudge it in the custom callbacks
+    panel = lv_obj_create(lv_scr_act());
+    lv_obj_set_size(panel, 280, 120);
+    lv_obj_set_scroll_snap_x(panel, LV_SCROLL_SNAP_CENTER);
+    lv_obj_set_flex_flow(panel, LV_FLEX_FLOW_ROW);
+    lv_obj_add_flag(panel, LV_OBJ_FLAG_SCROLL_ELASTIC);
+    lv_obj_align(panel, LV_ALIGN_CENTER, 0, 20);
+
+    uint32_t i;
+    for(i = 0; i < 10; i++) {
+        lv_obj_t * btn = lv_btn_create(panel);
+        lv_obj_set_size(btn, 150, lv_pct(100));
+
+        lv_obj_t * label = lv_label_create(btn);
+        if(i == 3) {
+            lv_label_set_text_fmt(label, "Panel %d\nno snap", i);
+            lv_obj_clear_flag(btn, LV_OBJ_FLAG_SNAPABLE);
+        } else {
+            lv_label_set_text_fmt(label, "Panel %d", i);
+        }
+
+        lv_obj_center(label);
+    }
+    lv_obj_update_snap(panel, LV_ANIM_ON);
+    lv_obj_add_event_cb(panel, event_cb, LV_EVENT_ALL, NULL);
+
+
 
   while(1) {
     /* Periodically call the lv_task handler.
@@ -150,6 +183,8 @@ static void hal_init(void)
 
   lv_group_t * g = lv_group_create();
   lv_group_set_default(g);
+  lv_group_set_wrap(g, false); // don't wrap
+  lv_group_set_edge_cb(g, edge_cb);
 
   /* Add the mouse as input device
    * Use the 'mouse' driver which reads the PC's mouse*/
@@ -179,10 +214,10 @@ static void hal_init(void)
   lv_indev_set_group(enc_indev, g);
 
   /*Set a cursor for the mouse*/
-  LV_IMG_DECLARE(mouse_cursor_icon); /*Declare the image file.*/
-  lv_obj_t * cursor_obj = lv_img_create(lv_scr_act()); /*Create an image object for the cursor */
-  lv_img_set_src(cursor_obj, &mouse_cursor_icon);           /*Set the image source*/
-  lv_indev_set_cursor(mouse_indev, cursor_obj);             /*Connect the image  object to the driver*/
+  // LV_IMG_DECLARE(mouse_cursor_icon); /*Declare the image file.*/
+  // lv_obj_t * cursor_obj = lv_img_create(lv_scr_act()); /*Create an image object for the cursor */
+  // lv_img_set_src(cursor_obj, &mouse_cursor_icon);           /*Set the image source*/
+  // lv_indev_set_cursor(mouse_indev, cursor_obj);             /*Connect the image  object to the driver*/
 }
 
 /**
@@ -199,4 +234,41 @@ static int tick_thread(void *data) {
   }
 
   return 0;
+}
+
+static void event_cb(lv_event_t *e)
+{
+  switch (e->code)
+  {
+    case LV_EVENT_SCROLL_BEGIN:
+      LV_LOG_WARN("Obj Scrolling");
+      /* fall through */
+    case LV_EVENT_SCROLL:
+      scrolling = true;
+      break;
+    case LV_EVENT_SCROLL_END:
+      scrolling = false;
+      LV_LOG_WARN("Obj Scrolling end");
+      break;
+  }
+}
+
+static void edge_cb(lv_group_t *group, bool forward)
+{
+  LV_LOG_WARN("%s reached\n", forward ? "End" : "Beginning");
+  if (!scrolling)
+  {
+    /* Don't trigger a scroll if one is already in progress.
+       Might still be scrolling the focused item into view or still bouncing from the last edge. */
+    if (forward)
+    {
+      lv_obj_scroll_by(panel, -25, 0, LV_ANIM_OFF);
+      lv_obj_scroll_by(panel, 25, 0, LV_ANIM_ON);
+    }
+    else
+    {
+      lv_obj_scroll_by(panel, 25, 0, LV_ANIM_OFF);
+      lv_obj_scroll_by(panel, -25, 0, LV_ANIM_ON);
+    }
+  }
 }
